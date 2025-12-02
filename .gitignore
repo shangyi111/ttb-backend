@@ -8,4 +8,4 @@
 .env
 *.json # Be careful, but necessary to exclude your Google key
 
-/google_app_key.json
+google_app_key.json
