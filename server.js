@@ -8,8 +8,12 @@ const { ImageAnnotatorClient } = require('@google-cloud/vision'); // Google Visi
 const app = express();
 const port = process.env.PORT || 3000; // Use environment variable for deployment
 
+const credentials = process.env.GOOGLE_CREDENTIALS_JSON ? 
+    JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON) : 
+    undefined;
+
 // Initialize Google Vision Client
-const visionClient = new ImageAnnotatorClient();
+const visionClient = new ImageAnnotatorClient({credentials});
 
 // Set up Multer to store files in a temporary 'uploads' directory
 const upload = multer({ dest: 'uploads/' });
@@ -134,7 +138,7 @@ app.post('/api/verify', upload.single('labelImage'), async (req, res) => {
 // Start Server
 app.listen(port, () => {
     console.log(`Backend server running at http://localhost:${port}`);
-    if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    if (!process.env.GOOGLE_CREDENTIALS_JSON) {
         console.warn('⚠️ WARNING: GOOGLE_APPLICATION_CREDENTIALS not set. Vision API will likely fail.');
     }
 });
