@@ -7,6 +7,3 @@
 # Environment and Keys (CRUCIAL for security)
 .env
 *.json # Be careful, but necessary to exclude your Google key
-
-# Explicitly ignore the Google Service Account Key file
-google_app_key.json
