@@ -7,3 +7,5 @@
 # Environment and Keys (CRUCIAL for security)
 .env
 *.json # Be careful, but necessary to exclude your Google key
+
+/google_app_key.json
