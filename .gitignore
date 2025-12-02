@@ -1,0 +1,9 @@
+# Dependencies
+/node_modules
+
+# Temporary files
+/uploads
+
+# Environment and Keys (CRUCIAL for security)
+.env
+*.json # Be careful, but necessary to exclude your Google key
