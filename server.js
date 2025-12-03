@@ -47,8 +47,8 @@ function performVerification(extractedText, formInput) {
 
     // --- 0. Setup Normalized Inputs ---
     const brandName = normalize(formInput.brandName || '');
-    const productClass = normalize(formInput.productClass || ''); // New Field
-    const netContents = normalize(formInput.netContents || '');   // New Field
+    const productClass = normalize(formInput.productClass || '');
+    const netContents = normalize(formInput.netContents || '');
     const alcoholContent = String(formInput.alcoholContent || 0).trim();
 
     // --- 1. Brand Name Check ---
@@ -82,18 +82,52 @@ function performVerification(extractedText, formInput) {
     }
     results.push({ field: 'Alcohol Content', status: abvStatus, expected: formInput.alcoholContent + '% (within tolerance)' });
 
-    // --- 4. Net Contents Check (Optional/Bonus Field) ---
-    // Net contents often appears with variations like '750ml' or '750 ml' or '12 fl oz'
+    // --- 4. Net Contents Check ---
+    // Net contents often appears with variations like '750ml', '750 ml', '12 fl oz', etc.
+
     let netStatus = 'Not Found/Mismatch';
-    if (netContents.length > 0 && normalizedText.includes(netContents.replace(' ', ''))) {
-        netStatus = 'Match';
-    } else {
-        // Since this is optional/bonus, we don't necessarily fail the overall check 
-        // if it's missing, but we still report the status.
-        // Let's treat it as mandatory for a thorough check, as implied by the TTB process.
-        if (netContents.length > 0) overallMatch = false;
+    let isMandatoryCheck = netContents.length > 0;
+    
+    // 1. Extract number and unit from form input (e.g., '750 mL' -> 750, 'mL')
+    // We use a regex to capture the number and any following letters/units.
+    const netContentsMatch = formInput.netContents.match(/(\d+\.?\d*)\s*([a-zA-Z]+)/i);
+
+    if (netContentsMatch) {
+        const volume = netContentsMatch[1]; // e.g., '750'
+        const unit = normalize(netContentsMatch[2]); // e.g., 'ml'
+        
+        // Create a regex pattern to find the volume, potentially followed by a space, and the unit.
+        // We handle common variations like 'fl oz' and 'mL'.
+        const unitPattern = unit.replace('floz', 'fl\\s*oz|floz').replace('ml', 'm\\s*l|ml|milliliter|millilitres');
+
+        // Regex to search for the number followed closely by the unit, allowing for minor spacing variations.
+        const searchRegex = new RegExp(`\\b${volume}\\s*${unitPattern}\\b`, 'i');
+
+        if (searchRegex.test(normalizedText)) {
+            netStatus = 'Match';
+        } else {
+            // Only set overallMatch to false if the user provided an input that failed the check.
+            if (isMandatoryCheck) overallMatch = false;
+        }
+
+    } else if (isMandatoryCheck) {
+        // If the user provided input but it couldn't be parsed (e.g., just "750"), 
+        // we'll try a simpler numerical inclusion check as a fallback.
+        const volumeOnly = normalize(formInput.netContents).match(/(\d+\.?\d*)/);
+        if (volumeOnly && normalizedText.includes(volumeOnly[1])) {
+             netStatus = 'Mismatch (Unit Missing)';
+             overallMatch = false; // Still mark as failure due to insufficient inpuut
+        } else {
+             overallMatch = false;
+        }
     }
-    results.push({ field: 'Net Contents', status: netStatus, expected: formInput.netContents });
+    
+    // Push results to the array
+    results.push({ 
+        field: 'Net Contents', 
+        status: netStatus, 
+        expected: formInput.netContents + (isMandatoryCheck ? '' : ' (Optional)') 
+    });
 
     // --- 5. Government Warning Check (Mandatory/Bonus) ---
     const warningPhrase = 'government warning';
@@ -179,3 +213,7 @@ app.listen(port, () => {
         console.warn('⚠️ WARNING: GOOGLE_APPLICATION_CREDENTIALS not set. Vision API will likely fail.');
     }
 });
+
+module.exports = {
+    performVerification
+};
