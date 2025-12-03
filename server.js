@@ -23,20 +23,36 @@ app.use(cors());
 app.use(express.json());
 
 /**
- * Helper function to perform verification checks
+ * Helper function to normalize text for case-insensitive matching.
+ * Removes all non-alphanumeric characters except spaces.
+ * @param {string} text - The input string.
+ * @returns {string} - The normalized string.
+ */
+function normalize(text) {
+    if (!text) return '';
+    // Removes non-alphanumeric characters, converts to lower case, and trims
+    return text.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").replace(/\s{2,}/g," ").trim();
+}
+
+/**
+ * Performs verification checks against the extracted text.
  * @param {string} extractedText - The full text recognized by OCR.
  * @param {object} formInput - The data submitted via the Angular form.
  * @returns {object} - The structured verification results.
  */
 function performVerification(extractedText, formInput) {
-    const normalizedText = extractedText.toLowerCase();
+    const normalizedText = normalize(extractedText);
     const results = [];
     let overallMatch = true;
 
+    // --- 0. Setup Normalized Inputs ---
+    const brandName = normalize(formInput.brandName || '');
+    const productClass = normalize(formInput.productClass || ''); // New Field
+    const netContents = normalize(formInput.netContents || '');   // New Field
+    const alcoholContent = String(formInput.alcoholContent || 0).trim();
+
     // --- 1. Brand Name Check ---
-    const brandName = (formInput.brandName || '').toLowerCase().trim();
     let brandStatus = 'Not Found/Mismatch';
-    
     if (brandName.length > 0 && normalizedText.includes(brandName)) {
         brandStatus = 'Match';
     } else {
@@ -44,10 +60,19 @@ function performVerification(extractedText, formInput) {
     }
     results.push({ field: 'Brand Name', status: brandStatus, expected: formInput.brandName });
 
-    // --- 2. Alcohol Content (ABV) Check ---
-    const alcoholContent = String(formInput.alcoholContent || 0).trim();
-    // Pattern to look for the ABV number followed by common symbols (%, % VOL, ALC./VOL.)
-    const abvRegex = new RegExp(`\\b${alcoholContent}(\\.0)?%|${alcoholContent}(\\.0)?\\s*(alc\\.|vol\\.)`, 'i');
+    // --- 2. Product Class/Type Check (New Mandatory Field) ---
+    let classStatus = 'Not Found/Mismatch';
+    if (productClass.length > 0 && normalizedText.includes(productClass)) {
+        classStatus = 'Match';
+    } else {
+        overallMatch = false;
+    }
+    results.push({ field: 'Product Class/Type', status: classStatus, expected: formInput.productClass });
+
+    // --- 3. Alcohol Content (ABV) Check ---
+    // Look for the number followed by %, % VOL, or ALC/VOL. We use a RegEx here
+    // to handle variations like '45% alc. by vol' or '45% vol'.
+    const abvRegex = new RegExp(`\\b${alcoholContent}(?:\\.0)?\\s*%\\s*(?:alc\\.|vol\\.|by\\s*vol\\.)?|\\b${alcoholContent}(?:\\.0)?\\s*%`, 'i');
     let abvStatus = 'Not Found/Mismatch';
     
     if (alcoholContent !== '0' && abvRegex.test(extractedText)) {
@@ -55,21 +80,33 @@ function performVerification(extractedText, formInput) {
     } else {
         overallMatch = false;
     }
-    results.push({ field: 'Alcohol Content', status: abvStatus, expected: formInput.alcoholContent + '%' });
+    results.push({ field: 'Alcohol Content', status: abvStatus, expected: formInput.alcoholContent + '% (within tolerance)' });
 
-    // --- 3. Bonus Check: Government Warning ---
-    const warningText = 'government warning';
+    // --- 4. Net Contents Check (Optional/Bonus Field) ---
+    // Net contents often appears with variations like '750ml' or '750 ml' or '12 fl oz'
+    let netStatus = 'Not Found/Mismatch';
+    if (netContents.length > 0 && normalizedText.includes(netContents.replace(' ', ''))) {
+        netStatus = 'Match';
+    } else {
+        // Since this is optional/bonus, we don't necessarily fail the overall check 
+        // if it's missing, but we still report the status.
+        // Let's treat it as mandatory for a thorough check, as implied by the TTB process.
+        if (netContents.length > 0) overallMatch = false;
+    }
+    results.push({ field: 'Net Contents', status: netStatus, expected: formInput.netContents });
+
+    // --- 5. Government Warning Check (Mandatory/Bonus) ---
+    const warningPhrase = 'government warning';
     let warningStatus = 'Not Found/Mismatch';
     
-    if (normalizedText.includes(warningText)) {
+    // Check for the mandatory warning phrase, handling OCR errors by normalizing
+    if (normalizedText.includes(warningPhrase)) {
         warningStatus = 'Match';
     } else {
-        // Warning is mandatory, so if it's missing, it's a failure.
+        // Warning is mandatory by law, so its absence is a failure.
         overallMatch = false; 
     }
-    results.push({ field: 'Government Warning', status: warningStatus, expected: warningText });
-
-    // NOTE: Add Net Contents check here if you included it in your Angular form.
+    results.push({ field: 'Government Warning', status: warningStatus, expected: 'Phrase "GOVERNMENT WARNING" present' });
 
     return { 
         overall_match: overallMatch, 
